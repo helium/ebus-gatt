@@ -1,0 +1,17 @@
+{application, gatt,
+ [{description, "An Erlang GATT server framework"},
+  {vsn, "git"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib,
+    lager,
+    ebus
+   ]},
+  {env,[]},
+  {mod, {gatt_app, []}},
+
+  {licenses, ["Apache 2.0"]},
+  {maintainers, ["Helium"]},
+  {links, [{"Github", "https://github.com/helium/ebus-gatt"}]}
+ ]}.
