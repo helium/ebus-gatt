@@ -3,13 +3,14 @@
 -callback init(Args::any()) -> {ok, [gatt:characteristic_spec()], State::any()} | {error, term()}.
 -callback uuid(State::any()) -> gatt:uuid().
 
--include("gatt.hrl").
-
 -behavior(ebus_object).
 -behavior(gatt_object).
 
+-include("gatt.hrl").
+-include_lib("ebus/include/ebus.hrl").
+
 %% ebus_object
--export([start_link/6, init/1, handle_message/3, handle_call/3]).
+-export([start_link/6, init/1, handle_message/3, handle_call/3, handle_info/2]).
 %% gatt_object
 -export([properties/1, uuid/1]).
 %% API
@@ -105,13 +106,8 @@ handle_call(path, _From, State=#state{}) ->
     {reply, State#state.path, State};
 handle_call(uuid, _From, State=#state{module=Module, state=ModuleState}) ->
     {reply, Module:uuid(ModuleState), State};
-handle_call(properties, _From, State=#state{module=Module, state=ModuleState}) ->
-    Props = #{"UUID" => Module:uuid(ModuleState),
-              "Primary" => State#state.primary,
-              "Characteristics" =>
-                  [gatt_characteristic:path(C) || C <- maps:values(State#state.characteristics)]
-             },
-    {reply, #{?GATT_SERVICE_IFACE => Props}, State};
+handle_call(properties, _From, State=#state{}) ->
+    {reply, #{?GATT_SERVICE_IFACE => mk_properties(State)}, State};
 handle_call({add_characteristic, Module, Index}, _From, State=#state{}) ->
     case start_characteristic(Module, Index, State) of
         {ok, CharPath, NewState} ->
@@ -137,6 +133,19 @@ handle_call({add_descriptor, CharPath, Module, Index}, _From, State=#state{}) ->
 handle_call(Msg, _From, State) ->
     lager:warning("Unhandled call ~p", [Msg]),
     {noreply, State}.
+
+
+handle_info({properties_changed, Path, IFace, Changed, Invalidated}, State=#state{}) ->
+    {noreply, State,
+     {signal, Path, ?DBUS_PROPETIES_INTERFACE, "Propertieschanged",
+      [string, {dict, string, variant}, {array, string}],
+      [IFace, Changed, Invalidated]}};
+
+handle_info(Msg, State=#state{}) ->
+    lager:warning("Unhandled info ~p", [Msg]),
+    {noreply, State}.
+
+
 
 
 %%
@@ -173,9 +182,25 @@ update_characteristic(CharKey, Characteristic, State=#state{}) ->
     NewChars = maps:put(CharKey, Characteristic, State#state.characteristics),
     State#state{characteristics=NewChars}.
 
+-spec mk_properties(#state{}) -> #{string() => any()}.
+mk_properties(State=#state{module=Module, state=ModuleState}) ->
+    #{"UUID" => Module:uuid(ModuleState),
+      "Primary" => State#state.primary,
+      "Characteristics" =>
+          [gatt_characteristic:path(C) || C <- maps:values(State#state.characteristics)]
+     }.
+
+handle_message_service(Member=?DBUS_PROPERTIES("GetAll"), Msg, State=#state{}) ->
+    case ebus_message:interface(Msg) of
+        ?GATT_SERVICE_IFACE ->
+            {reply, [{dict, string, variant}],  [mk_properties(State)], State};
+        Other ->
+            lager:warning("Unhandled service request ~p(\"~p\")", [Member, Other]),
+            {reply_error, ?DBUS_ERROR_NOT_SUPPORTED, Member, State}
+    end;
 handle_message_service(Member, _Msg, State=#state{}) ->
     lager:warning("Unhandled service message ~p", [Member]),
-    {noreply, State}.
+    {reply_error, ?DBUS_ERROR_NOT_SUPPORTED, Member, State}.
 
 handle_message_characteristic(CharKey, Member, Msg, State) ->
     case maps:get(CharKey, State#state.characteristics, false) of

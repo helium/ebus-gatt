@@ -4,5 +4,13 @@
 -define(GATT_MANAGER(M), ?GATT_MANAGER_IFACE ++ "." ++ M).
 
 -define(GATT_CHARACTERISTIC_IFACE, "org.bluez.GattCharacteristic1").
+-define(GATT_CHARACTERISTIC(M), ?GATT_CHARACTERISTIC_IFACE ++ "." ++ M).
+
 -define(GATT_DESCRIPTOR_IFACE, "org.bluez.GattDescriptor1").
+-define(GATT_DESCRIPTOR(M), ?GATT_DESCRIPTOR_IFACE ++ "." ++ M).
+
 -define(GATT_SERVICE_IFACE, "org.bluez.GattService1").
+
+-define(GATT_ERROR_NOT_SUPPORTED, "org.bluez.Error.NotSupported").
+-define(GATT_ERROR_NOT_AUTHORIZED, "org.bluez.Error.NotAuthorized").
+-define(GATT_ERROR_FAILED, "org.bluez.Error.Failed").

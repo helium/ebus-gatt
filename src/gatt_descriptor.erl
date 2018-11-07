@@ -1,11 +1,18 @@
 -module(gatt_descriptor).
 
--callback init(Args::any()) -> {ok, State::any()} | {error, term()}.
+-callback init(Path::ebus:object(), Args::any()) -> {ok, State::any()} | {error, term()}.
 -callback uuid(State::any()) -> gatt:uuid().
 -callback flags(State::any()) -> [flag()].
+-callback read_value(State::any()) -> {ok, binary(), State::any()} |
+                                      {error, GatError::string(), State::any()}.
+-callback write_value(State::any(), binary()) -> {ok, State::any()} |
+                                                 {error, GatError::string(), State::any()}.
+
+-optional_callbacks([read_value/1, write_value/2]).
 
 -behavior(gatt_object).
 -include("gatt.hrl").
+-include_lib("ebus/include/ebus.hrl").
 
 -record(state, {
                 characteristic_path :: ebus:object_path(),
@@ -24,7 +31,7 @@
 
 -spec init(list()) -> {ok, gatt:descriptor()} | {error, term()}.
 init([CharPath, Path, Module, Args]) ->
-    case Module:init(Args) of
+    case Module:init(Path, Args) of
         {ok, ModuleState} ->
             {ok, #state{path=Path, characteristic_path=CharPath,
                         module=Module, state=ModuleState}};
@@ -45,25 +52,54 @@ flags(#state{module=Module, state=ModuleState}) ->
     Module:flags(ModuleState).
 
 properties(State=#state{}) ->
-    #{ ?GATT_DESCRIPTOR_IFACE =>
-           #{
-             "Characteristic" => characteristic_path(State),
-             "UUID" => uuid(State),
-             "Flags" => flags_to_strings(flags(State))
-            }
-     }.
+    #{ ?GATT_DESCRIPTOR_IFACE => mk_properties(State) }.
 
-handle_message(Member, Msg, State=#state{module=Module, state=ModuleState}) ->
-    case Module:handle_message(Member, Msg, ModuleState) of
-        {noreply, NewModuleState} ->
-            {noreply, State#state{state=NewModuleState}};
-        {reply, Types, Args, NewModuleState} ->
-            {reply, Types, Args, State#state{state=NewModuleState}};
-        {reply_error, ErrorName, ErrorMsg, NewModuleState} ->
-            {reply_error, ErrorName, ErrorMsg, State#state{state=NewModuleState}};
-        {stop, Reason, NewModuleState} ->
-            {stop, Reason, State#state{state=NewModuleState}}
-    end.
+handle_message(Member=?GATT_DESCRIPTOR("ReadValue"), _Msg,
+               State=#state{module=Module, state=ModuleState}) ->
+    case erlang:function_exported(Module, read_value, 1) of
+        false -> {reply_error, ?GATT_ERROR_NOT_SUPPORTED, Member, State};
+        true ->
+            case Module:read_value(ModuleState) of
+                {ok, Bin, NewModuleState} ->
+                    {reply, [binary], [Bin], State#state{state=NewModuleState}};
+                {error, GattError, NewModuleState} ->
+                    {reply_error, GattError, Member, State#state{state=NewModuleState}}
+            end
+    end;
+handle_message(Member=?GATT_DESCRIPTOR("WriteValue"), Msg,
+               State=#state{module=Module, state=ModuleState}) ->
+    case erlang:function_exported(Module, write_value, 2) of
+        false -> {reply_error, ?GATT_ERROR_NOT_SUPPORTED, Member, State};
+        true ->
+            case ebus_message:args(Msg) of
+                {ok, [Bin]} when is_binary(Bin) ->
+                    case Module:write_value(ModuleState, Bin) of
+                        {ok, NewModuleState} ->
+                            {reply, [], [], State#state{state=NewModuleState}};
+                        {error, GatError, NewModuleState} ->
+                            {reply_error, GatError, Member, State#state{state=NewModuleState}}
+                    end;
+                _ ->
+                    {reply_error, ?GATT_ERROR_FAILED, "Bad argument", State}
+            end
+    end;
+
+handle_message(Member, _Msg, State=#state{}) ->
+    lager:warning("Unhandled message ~p", [Member]),
+    {reply_error, ?DBUS_ERROR_NOT_SUPPORTED, Member, State}.
+
+
+%%
+%% Internal
+%%
+
+-spec mk_properties(#state{}) -> map().
+mk_properties(State=#state{}) ->
+    #{
+      "Characteristic" => characteristic_path(State),
+      "UUID" => uuid(State),
+      "Flags" => flags_to_strings(flags(State))
+     }.
 
 -spec flags_to_strings([flag()]) -> [string()].
 flags_to_strings(Flags) ->

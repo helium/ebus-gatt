@@ -1,11 +1,22 @@
 -module(gatt_characteristic).
 
--callback init(Args::any()) -> {ok, [gatt:descriptor_spec()], State::any()} | {error, term()}.
+-callback init(ebus:object_path(), Args::any()) -> {ok, [gatt:descriptor_spec()], State::any()} |
+                                                   {error, term()}.
 -callback uuid(State::any()) -> gatt:uuid().
 -callback flags(State::any()) -> [flag()].
+-callback read_value(State::any()) -> {ok, binary(), State::any()} |
+                                      {error, GatError::string(), State::any()}.
+-callback write_value(State::any(), binary()) -> {ok, State::any()} |
+                                                 {error, GatError::string(), State::any()}.
+-callback start_notify(State::any()) -> {ok, State::any()} | {error, GatError::string(), State::any()}.
+-callback stop_notify(State::any()) -> {ok, State::any()} | {error, GatError::string(), State::any()}.
+
+-optional_callbacks([read_value/1, write_value/2,
+                     start_notify/1, stop_notify/1]).
 
 -behavior(gatt_object).
 -include("gatt.hrl").
+-include_lib("ebus/include/ebus.hrl").
 
 -record(state, {
                 service_path :: ebus:object_path(),
@@ -25,7 +36,7 @@
 
 -spec init(list()) -> {ok, gatt:characteristic()} | {error, term()}.
 init([ServicePath, Path, Module, Args]) ->
-    case Module:init(Args) of
+    case Module:init(Path, Args) of
         {ok, Descriptors, ModuleState} ->
             State = #state{service_path=ServicePath, path=Path, module=Module, state=ModuleState},
             NewState = lists:foldl(fun({DescMod, DescIndex}, AccState) ->
@@ -54,14 +65,7 @@ flags(#state{module=Module, state=ModuleState}) ->
     Module:flags(ModuleState).
 
 properties(State=#state{}) ->
-    #{?GATT_CHARACTERISTIC_IFACE =>
-          #{
-            "Service" =>  service_path(State),
-            "UUID" => uuid(State),
-            "Flags" => flags_to_strings(flags(State)),
-            "Descriptors" => [gatt_descriptor:path(D) || D <- maps:values(State#state.descriptors)]
-           }
-     }.
+    #{?GATT_CHARACTERISTIC_IFACE => mk_properties(State)}.
 
 -spec add_descriptor(characteristic(), atom(), non_neg_integer())
                     -> {ok, ebus:object_path(), characteristic()} | {error, term()}.
@@ -81,13 +85,75 @@ add_descriptor(State=#state{}, Module, Index) ->
 fold_descriptors(State=#state{}, Fun, Acc) ->
     maps:fold(Fun, Acc, State#state.descriptors).
 
+handle_message(Member=?GATT_CHARACTERISTIC("ReadValue"), _Msg,
+               State=#state{module=Module, state=ModuleState}) ->
+    case erlang:function_exported(Module, read_value, 1) of
+        false -> {reply_error, ?GATT_ERROR_NOT_SUPPORTED, Member, State};
+        true ->
+            case Module:read_value(ModuleState) of
+                {ok, Bin, NewModuleState} ->
+                    {reply, [binary], [Bin], State#state{state=NewModuleState}};
+                {error, GattError, NewModuleState} ->
+                    {reply_error, GattError, Member, State#state{state=NewModuleState}}
+            end
+    end;
+handle_message(Member=?GATT_CHARACTERISTIC("WriteValue"), Msg,
+               State=#state{module=Module, state=ModuleState}) ->
+    case erlang:function_exported(Module, write_value, 2) of
+        false -> {reply_error, ?GATT_ERROR_NOT_SUPPORTED, Member, State};
+        true ->
+            case ebus_message:args(Msg) of
+                {ok, [Bin]} when is_binary(Bin) ->
+                    case Module:write_value(ModuleState, Bin) of
+                        {ok, NewModuleState} ->
+                            {reply, [], [], State#state{state=NewModuleState}};
+                        {error, GatError, NewModuleState} ->
+                            {reply_error, GatError, Member, State#state{state=NewModuleState}}
+                    end;
+                _ ->
+                    {reply_error, ?GATT_ERROR_FAILED, "Bad argument", State}
+            end
+    end;
+handle_message(Member=?GATT_CHARACTERISTIC("StartNotify"), _Msg,
+               State=#state{module=Module, state=ModuleState}) ->
+    case erlang:function_exported(Module, start_notify, 1) of
+        false -> {reply_error, ?GATT_ERROR_NOT_SUPPORTED, Member, State};
+        true ->
+            case Module:start_notify(ModuleState) of
+                {ok, NewModuleState} ->
+                    {reply, [], [], State#state{state=NewModuleState}};
+                {error, GatError, NewModuleState} ->
+                    {reply_error, GatError, Member, State#state{state=NewModuleState}}
+            end
+    end;
+handle_message(Member=?GATT_CHARACTERISTIC("StopNotify"), _Msg,
+               State=#state{module=Module, state=ModuleState}) ->
+    case erlang:function_exported(Module, stop_notify, 1) of
+        false -> {reply_error, ?GATT_ERROR_NOT_SUPPORTED, Member, State};
+        true ->
+            case Module:stop_notify(ModuleState) of
+                {ok, NewModuleState} ->
+                    {reply, [], [], State#state{state=NewModuleState}};
+                {error, GatError, NewModuleState} ->
+                    {reply_error, GatError, Member, State#state{state=NewModuleState}}
+            end
+    end;
+
 handle_message(Member, _Msg, State=#state{}) ->
     lager:warning("Unhandled message ~p", [Member]),
-    {noreply, State}.
+    {reply_error, ?DBUS_ERROR_NOT_SUPPORTED, Member, State}.
 
 %%
 %% Internal
 %%
+
+mk_properties(State=#state{}) ->
+    #{
+      "Service" =>  service_path(State),
+      "UUID" => uuid(State),
+      "Flags" => flags_to_strings(flags(State)),
+      "Descriptors" => [gatt_descriptor:path(D) || D <- maps:values(State#state.descriptors)]
+     }.
 
 -spec update_descriptor(string(), gatt:descriptor(), #state{}) -> #state{}.
 update_descriptor(DescKey, Descriptor, State=#state{}) ->
