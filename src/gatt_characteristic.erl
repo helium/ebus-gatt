@@ -32,7 +32,9 @@
 -export_type([characteristic/0, spec/0, flag/0]).
 
 -export([init/1, uuid/1, path/1, properties/1, flags/1, handle_message/3,
-         add_descriptor/3, fold_descriptors/3]).
+         add_descriptor/3, fold_descriptors/3,
+         value_changed/2, value_invalidated/1,
+         properties_changed/3]).
 
 -spec init(list()) -> {ok, gatt:characteristic()} | {error, term()}.
 init([ServicePath, Path, Module, Args]) ->
@@ -66,6 +68,20 @@ flags(#state{module=Module, state=ModuleState}) ->
 
 properties(State=#state{}) ->
     #{?GATT_CHARACTERISTIC_IFACE => mk_properties(State)}.
+
+-spec value_changed(ebus:object_path(), NewValue::binary()) -> ok.
+value_changed(Path, NewValue) ->
+    properties_changed(Path, #{"Value" => NewValue}, []).
+
+-spec value_invalidated(ebus:object_path()) -> ok.
+value_invalidated(Path) ->
+    properties_changed(Path, #{}, ["Value"]).
+
+-spec properties_changed(ebus:object_path(), #{string() => any()}, [string()]) -> ok.
+properties_changed(Path, Changed, Invalidated) ->
+    self() ! {properties_changed, Path, ?GATT_CHARACTERISTIC_IFACE, Changed, Invalidated},
+    ok.
+
 
 -spec add_descriptor(characteristic(), atom(), non_neg_integer())
                     -> {ok, ebus:object_path(), characteristic()} | {error, term()}.
