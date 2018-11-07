@@ -1,12 +1,16 @@
 {"1.1.0",
 [{<<"ebus">>,
   {git,"https://github.com/helium/ebus",
-       {ref,"c30628d0dbd43b23e74cf5ff670b4128ad803ad4"}},
+       {ref,"65ec731db87473810685cb6e1d3023f6a238ecab"}},
   0},
  {<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.9">>},1},
- {<<"lager">>,{pkg,<<"lager">>,<<"3.6.5">>},0}]}.
+ {<<"lager">>,{pkg,<<"lager">>,<<"3.6.5">>},0},
+ {<<"quickrand">>,{pkg,<<"quickrand">>,<<"1.7.4">>},1},
+ {<<"uuid">>,{pkg,<<"uuid_erl">>,<<"1.7.4">>},0}]}.
 [
 {pkg_hash,[
  {<<"goldrush">>, <<"F06E5D5F1277DA5C413E84D5A2924174182FB108DABB39D5EC548B27424CD106">>},
- {<<"lager">>, <<"831910109F3FCB503DEBF658CA0538836B348C58BFBF349A6D48228096CE9040">>}]}
+ {<<"lager">>, <<"831910109F3FCB503DEBF658CA0538836B348C58BFBF349A6D48228096CE9040">>},
+ {<<"quickrand">>, <<"F91F34469D6AC153B951BB34DD9C78029882426BD61E12B85E5EE465850C08ED">>},
+ {<<"uuid">>, <<"4EC01367FEDFBAEEB9D9BC88B2D239D42CE5B53AD284741262F86B71EB82FBFA">>}]}
 ].
