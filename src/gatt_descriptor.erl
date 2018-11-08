@@ -15,6 +15,7 @@
 -include_lib("ebus/include/ebus.hrl").
 
 -record(state, {
+                bus :: ebus:bus(),
                 characteristic_path :: ebus:object_path(),
                 path :: ebus:object_path(),
                 module :: atom(),
@@ -30,11 +31,16 @@
 -export([init/1, uuid/1, path/1, properties/1, handle_message/3]).
 
 -spec init(list()) -> {ok, gatt:descriptor()} | {error, term()}.
-init([CharPath, Path, Module, Args]) ->
+init([Bus, CharPath, Path, Module, Args]) ->
     case Module:init(Path, Args) of
         {ok, ModuleState} ->
-            {ok, #state{path=Path, characteristic_path=CharPath,
-                        module=Module, state=ModuleState}};
+            case ebus:register_object_path(Bus, Path, self()) of
+                ok ->
+                    {ok, #state{bus=Bus, path=Path, characteristic_path=CharPath,
+                                module=Module, state=ModuleState}};
+                {error, Error} ->
+                    {error, Error}
+            end;
         {error, Error} ->
             {error, Error}
     end.

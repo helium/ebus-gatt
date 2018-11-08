@@ -57,7 +57,6 @@ init([Sup, Bus, Module, Args]) ->
     end.
 
 handle_message(?DBUS_OBJECT_MANAGER("GetManagedObjects"), _Msg, State=#state{}) ->
-    lager:info("Managed Objects"),
     DescFn = fun(_, Desc, Acc) ->
                      maps:put(gatt_descriptor:path(Desc),
                               gatt_descriptor:properties(Desc),

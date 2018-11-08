@@ -24,6 +24,7 @@
 -export_type([service/0, spec/0]).
 
 -record(state, {
+                bus :: ebus:bus(),
                 path :: string(),
                 primary :: boolean(),
                 module :: atom(),
@@ -58,13 +59,14 @@ path(Pid) ->
 
 start_link(Bus, BasePath, Index, Primary, Module, Args) ->
     Path = BasePath ++ "/service" ++ integer_to_list(Index),
-    ebus_object:start_link(Bus, Path, ?MODULE, [Path, Primary, Module, Args], []).
+    ebus_object:start_link(Bus, Path, ?MODULE, [Bus, Path, Primary, Module, Args], []).
 
-init([Path, Primary, Module, Args]) ->
+init([Bus, Path, Primary, Module, Args]) ->
     case Module:init(Args) of
         {ok, CharSpecs, ModuleState} ->
-            PathPattern = re:compile("^(" ++ Path ++ ")(/char[0-9]+)?.*"),
-            State0 = #state{path=Path,
+            {ok, PathPattern} = re:compile("^(" ++ Path ++ ")(/char[0-9]+)?.*"),
+            State0 = #state{bus=Bus,
+                            path=Path,
                             module=Module,
                             state=ModuleState,
                             primary=Primary,
@@ -81,17 +83,17 @@ init([Path, Primary, Module, Args]) ->
         {error, Error} -> {error, Error}
     end.
 
-handle_message(Member, Msg, State=#state{path=Path}) ->
+handle_message(Member, Msg, State=#state{path=ServicePath}) ->
     case ebus_message:path(Msg) of
         undefined -> {noreply, State};
-        Path ->
-            case re:run(Path, State#state.path_mp,
+        MessagePath ->
+            case re:run(MessagePath, State#state.path_mp,
                         [{capture, all_but_first, list}]) of
                 nomatch -> {noreply, State};
-                {match, [Path]} ->
+                {match, [ServicePath]} ->
                     %% Only service path detected
                     handle_message_service(Member, Msg, State);
-                {match, [Path, CharPath]} ->
+                {match, [ServicePath, CharPath]} ->
                     %% Characteristic detected. Pass on to characteristic
                     handle_message_characteristic(CharPath, Member, Msg, State)
             end
@@ -170,7 +172,7 @@ find_characteristic(CharPath, State=#state{path=Path}) ->
 start_characteristic(Module, Index, State=#state{}) ->
     CharKey = "/char" ++ erlang:integer_to_list(Index),
     CharPath = State#state.path ++ CharKey,
-    case gatt_characteristic:init([State#state.path, CharPath, Module, []]) of
+    case gatt_characteristic:init([State#state.bus, State#state.path, CharPath, Module, []]) of
         {ok, Characteristic} ->
             {ok, CharPath, update_characteristic(CharKey, Characteristic, State)};
         {error, Error} ->

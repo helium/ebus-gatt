@@ -19,6 +19,7 @@
 -include_lib("ebus/include/ebus.hrl").
 
 -record(state, {
+                bus :: ebus:bus(),
                 service_path :: ebus:object_path(),
                 path :: ebus:object_path(),
                 descriptors=#{} ::  #{ebus:object_path() => gatt:descriptor()},
@@ -37,19 +38,26 @@
          properties_changed/3]).
 
 -spec init(list()) -> {ok, gatt:characteristic()} | {error, term()}.
-init([ServicePath, Path, Module, Args]) ->
+init([Bus, ServicePath, Path, Module, Args]) ->
     case Module:init(Path, Args) of
         {ok, Descriptors, ModuleState} ->
-            State = #state{service_path=ServicePath, path=Path, module=Module, state=ModuleState},
-            NewState = lists:foldl(fun({DescMod, DescIndex}, AccState) ->
-                                           case add_descriptor(AccState, DescMod, DescIndex) of
-                                               {ok, _, AccState1} -> AccState1;
-                                               {error, Error} -> {error, Error}
-                                           end;
-                                      (_, {error, Error}) ->
-                                           {error, Error}
-                                   end, State, Descriptors),
-            {ok, NewState};
+            State = #state{bus=Bus, service_path=ServicePath, path=Path, module=Module, state=ModuleState},
+            case lists:foldl(fun({DescMod, DescIndex}, AccState) ->
+                                     case add_descriptor(AccState, DescMod, DescIndex) of
+                                         {ok, _, AccState1} -> AccState1;
+                                         {error, Error} -> {error, Error}
+                                     end;
+                                (_, {error, Error}) ->
+                                     {error, Error}
+                             end, State, Descriptors) of
+                {eror, Error} -> {error, Error};
+                NewState ->
+                    case ebus:register_object_path(Bus, Path, self()) of
+                        ok ->
+                            {ok, NewState};
+                        {error, Error} -> {error, Error}
+                    end
+            end;
         {error, Error} ->
             {error, Error}
     end.
@@ -88,7 +96,7 @@ properties_changed(Path, Changed, Invalidated) ->
 add_descriptor(State=#state{}, Module, Index) ->
     DescKey = "/desc" ++ erlang:integer_to_list(Index),
     DescPath = State#state.path ++ DescKey,
-    case gatt_descriptor:init([State#state.path, DescPath, Module, []]) of
+    case gatt_descriptor:init([State#state.bus, State#state.path, DescPath, Module, []]) of
         {ok, Descriptor} ->
             {ok, DescPath, update_descriptor(DescKey, Descriptor, State)};
         {error, Error} ->
@@ -104,12 +112,14 @@ fold_descriptors(State=#state{}, Fun, Acc) ->
 handle_message(Member=?GATT_CHARACTERISTIC("ReadValue"), _Msg,
                State=#state{module=Module, state=ModuleState}) ->
     case erlang:function_exported(Module, read_value, 1) of
-        false -> {reply_error, ?GATT_ERROR_NOT_SUPPORTED, Member, State};
+        false ->
+            {reply_error, ?GATT_ERROR_NOT_SUPPORTED, Member, State};
         true ->
             case Module:read_value(ModuleState) of
                 {ok, Bin, NewModuleState} ->
-                    {reply, [binary], [Bin], State#state{state=NewModuleState}};
+                    {reply, [{array, byte}], [Bin], State#state{state=NewModuleState}};
                 {error, GattError, NewModuleState} ->
+                    lager:error("ERROR ~p", [GattError]),
                     {reply_error, GattError, Member, State#state{state=NewModuleState}}
             end
     end;
@@ -119,7 +129,7 @@ handle_message(Member=?GATT_CHARACTERISTIC("WriteValue"), Msg,
         false -> {reply_error, ?GATT_ERROR_NOT_SUPPORTED, Member, State};
         true ->
             case ebus_message:args(Msg) of
-                {ok, [Bin]} when is_binary(Bin) ->
+                {ok, [Bin, _]} when is_binary(Bin) ->
                     case Module:write_value(ModuleState, Bin) of
                         {ok, NewModuleState} ->
                             {reply, [], [], State#state{state=NewModuleState}};
