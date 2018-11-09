@@ -24,7 +24,7 @@
                }).
 
 -type descriptor() :: #state{}.
--type spec() :: {Module::atom(), Index::non_neg_integer()}.
+-type spec() :: {Module::atom(), Index::non_neg_integer(), Args::[any()]}.
 -type flag() :: read | write.
 -export_type([descriptor/0, spec/0]).
 
@@ -67,7 +67,7 @@ handle_message(Member=?GATT_DESCRIPTOR("ReadValue"), _Msg,
         true ->
             case Module:read_value(ModuleState) of
                 {ok, Bin, NewModuleState} ->
-                    {reply, [binary], [Bin], State#state{state=NewModuleState}};
+                    {reply, [{array, byte}], [Bin], State#state{state=NewModuleState}};
                 {error, GattError, NewModuleState} ->
                     {reply_error, GattError, Member, State#state{state=NewModuleState}}
             end

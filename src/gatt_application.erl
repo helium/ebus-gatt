@@ -87,13 +87,13 @@ handle_message(Member, _Msg, State=#state{}) ->
 handle_info({register_application, ServiceSpecs}, State=#state{}) ->
     %% Spawn of the actual RegisterApplication call since we'll get
     %% called back for our managed objects.
-    NewState = start_services(ServiceSpecs, State),
     Parent = self(),
+    NewState = start_services(ServiceSpecs, State),
     spawn_link(fun() ->
-                       Result = call_manager(State, "RegisterApplication",
-                                             [object_path, {dict, string, variant}],
-                                             [NewState#state.path, #{}]),
-                       Parent ! {register_application_result, Result}
+                       RegResult = call_manager(NewState, "RegisterApplication",
+                                                [object_path, {dict, string, variant}],
+                                                [NewState#state.path, #{}]),
+                       Parent ! {register_application_result, RegResult}
                end),
     {noreply, NewState};
 handle_info({register_application_result, Result}, State=#state{}) ->
