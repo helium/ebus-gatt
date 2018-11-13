@@ -2,6 +2,11 @@
 
 -callback init(Args::any()) -> {ok, [gatt:characteristic_spec()], State::any()} | {error, term()}.
 -callback uuid(State::any()) -> gatt:uuid().
+-callback handle_signal(SignalID::ebus:filter_id(),
+                        Msg::ebus:messgage(),
+                        State::any()) -> ok | {ok, State::any()}.
+
+-optional_callbacks([handle_signal/3]).
 
 -behavior(ebus_object).
 -behavior(gatt_object).
@@ -138,6 +143,19 @@ handle_info({properties_changed, Path, IFace, Changed, Invalidated}, State=#stat
      {signal, Path, ?DBUS_PROPETIES_INTERFACE, "Propertieschanged",
       [string, {dict, string, variant}, {array, string}],
       [IFace, Changed, Invalidated]}};
+handle_info({ebus_signal, Path, SignalID, Msg}, State=#state{}) ->
+    case find_characteristic(Path, State) of
+        {error, no_path} ->
+            lager:warning("Received signal ~p without path: ~p", [SignalID, Path]),
+            {noreply, State};
+        {error, service_path} ->
+            %% Only service path detected
+            handle_signal_service(SignalID, Msg, State);
+        {ok, CharKey, Characteristic} ->
+            %% Characteristic detected. Pass on to characteristic
+            handle_signal_characteristic(CharKey, Characteristic, SignalID, Msg, State)
+    end;
+
 
 handle_info(Msg, State=#state{}) ->
     lager:warning("Unhandled info ~p", [Msg]),
@@ -210,4 +228,24 @@ handle_message_characteristic(CharKey, Characteristic, Member, Msg, State) ->
         {reply_error, ErrorName, ErrorMsg, NewCharacteristic} ->
             {reply_error, ErrorName, ErrorMsg,
              update_characteristic(CharKey, NewCharacteristic, State)}
+    end.
+
+handle_signal_service(SignalID, Msg, State=#state{module=Module, state=ModuleState}) ->
+    case erlang:function_exported(Module, handle_signal, 3) of
+        false -> {noreply, State};
+        true ->
+            case gatt_service:handle_signal(SignalID, Msg, ModuleState) of
+                ok ->
+                    {noreply, State};
+                {ok, NewModuleState} ->
+                    {noreply, State=#state{state=NewModuleState}}
+            end
+    end.
+
+handle_signal_characteristic(CharKey, Characteristic, SignalID, Msg, State=#state{}) ->
+    case gatt_characteristic:handle_signal(SignalID, Msg, Characteristic) of
+        ok ->
+            {noreply, State};
+        {ok, NewCharacteristic} ->
+            {noreply, update_characteristic(CharKey, NewCharacteristic, State)}
     end.

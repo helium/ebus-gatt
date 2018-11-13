@@ -8,11 +8,19 @@
                                       {error, GatError::string(), State::any()}.
 -callback write_value(State::any(), binary()) -> {ok, State::any()} |
                                                  {error, GatError::string(), State::any()}.
--callback start_notify(State::any()) -> {ok, State::any()} | {error, GatError::string(), State::any()}.
--callback stop_notify(State::any()) -> {ok, State::any()} | {error, GatError::string(), State::any()}.
+-callback start_notify(State::any()) -> {ok, State::any()} |
+                                        {error, GatError::string(),
+                                         State::any()}.
+-callback stop_notify(State::any()) -> {ok, State::any()} |
+                                       {error, GatError::string(),
+                                        State::any()}.
+-callback handle_signal(SignalID::ebus:filter_id(),
+                        Msg::ebus:messgage(),
+                        State::any()) -> ok | {ok, State::any()}.
 
 -optional_callbacks([read_value/1, write_value/2,
-                     start_notify/1, stop_notify/1]).
+                     start_notify/1, stop_notify/1,
+                     handle_signal/3]).
 
 -behavior(gatt_object).
 -include("gatt.hrl").
@@ -36,7 +44,8 @@
 -export([init/1, uuid/1, path/1, properties/1, flags/1, handle_message/3,
          add_descriptor/2, fold_descriptors/3,
          value_changed/2, value_invalidated/1,
-         properties_changed/3]).
+         properties_changed/3,
+         handle_signal/3]).
 
 -spec init(list()) -> {ok, gatt:characteristic()} | {error, term()}.
 init([Bus, ServicePath, Path, Module, Args]) ->
@@ -110,7 +119,8 @@ fold_descriptors(State=#state{}, Fun, Acc) ->
     maps:fold(Fun, Acc, State#state.descriptors).
 
 
--spec handle_message(Member::string(), Msg::ebus:message(), #state{}) -> ebus_object:handle_message_result().
+-spec handle_message(Member::string(), Msg::ebus:message(), #state{})
+                    -> ebus_object:handle_message_result().
 handle_message(Member, Msg, State=#state{}) ->
     case find_descriptor(ebus_message:path(Msg), State) of
         {error, no_path} ->
@@ -122,6 +132,17 @@ handle_message(Member, Msg, State=#state{}) ->
             handle_message_descriptor(DescKey, Descriptor, Member, Msg, State)
     end.
 
+
+handle_signal(SignalID, Msg, State=#state{module=Module, state=ModuleState}) ->
+    case erlang:function_exported(Module, handle_signal, 3) of
+        false -> ok;
+        true ->
+            case Module:handle_signal(SignalID, Msg, ModuleState) of
+                ok -> ok;
+                {ok, NewModuleState} ->
+                    {ok, State#state{state=NewModuleState}}
+            end
+    end.
 
 
 %%
