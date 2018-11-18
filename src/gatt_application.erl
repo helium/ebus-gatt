@@ -8,7 +8,7 @@
 
 -behavior(ebus_object).
 
--callback bus() -> ebus:bus().
+-callback bus() -> {ok, ebus:bus()} | {error, term()}.
 -callback path() -> ebus:object_path().
 -callback adapter_path() -> ebus:object_path().
 -callback init(Args::any()) -> {ok, [gatt:service_spec()], State::any()} | {error, term()}.

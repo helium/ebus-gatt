@@ -5,8 +5,10 @@
 -callback handle_signal(SignalID::ebus:filter_id(),
                         Msg::ebus:messgage(),
                         State::any()) -> ok | {ok, State::any()}.
+-callback handle_info(Msg::any(), State::any()) -> {noreply, State::any()} |
+                                                   {stop, Reason::term(), State::any()}.
 
--optional_callbacks([handle_signal/3]).
+-optional_callbacks([handle_signal/3, handle_info/2]).
 
 -behavior(ebus_object).
 -behavior(gatt_object).
@@ -43,7 +45,9 @@ add_characteristic(Pid, CharSpec) ->
     gen_server:call(Pid, {add_characteristic, CharSpec}).
 
 -spec fold_characteristics(pid(),
-                           fun((ebus:object_path(), gatt:characteristic(), AccIn::any()) -> AccOut::any()),
+                           fun((ebus:object_path(),
+                                gatt:characteristic(),
+                                AccIn::any()) -> AccOut::any()),
                            Acc0::any()) -> Acc1::any().
 fold_characteristics(Pid, Fun, Acc) ->
     gen_server:call(Pid, {fold_characteristics, Fun, Acc}).
@@ -127,7 +131,8 @@ handle_call({add_descriptor, CharPath, DescSpec}, _From, State=#state{}) ->
         {ok, CharKey, Characteristic} ->
             case gatt_characteristic:add_descriptor(Characteristic, DescSpec) of
                 {ok, DescPath, NewCharaceristic} ->
-                    {reply, {ok, DescPath}, update_characteristic(CharKey, NewCharaceristic, State)};
+                    {reply, {ok, DescPath},
+                     update_characteristic(CharKey, NewCharaceristic, State)};
                 {error, Error} ->
                     {reply, {error, Error}, State}
             end
@@ -155,12 +160,19 @@ handle_info({ebus_signal, Path, SignalID, Msg}, State=#state{}) ->
             %% Characteristic detected. Pass on to characteristic
             handle_signal_characteristic(CharKey, Characteristic, SignalID, Msg, State)
     end;
-
-
-handle_info(Msg, State=#state{}) ->
-    lager:warning("Unhandled info ~p", [Msg]),
-    {noreply, State}.
-
+handle_info(Msg, State=#state{module=Module, state=ModuleState}) ->
+    case erlang:function_exported(Module, handle_info, 2) of
+        false ->
+            lager:warning("Unhandled service info ~p", [Msg]),
+            {noreply, State};
+        true ->
+            case Module:handle_info(Msg, ModuleState) of
+                {noreply, NewModuleState} ->
+                    {noreply, State#state{state=NewModuleState}};
+                {stop, Reason, NewModuleState} ->
+                    {stop, Reason, State#state{state=NewModuleState}}
+            end
+    end.
 
 %%
 %% Internal
