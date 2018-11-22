@@ -14,13 +14,14 @@
 -callback stop_notify(State::any()) -> {ok, State::any()} |
                                        {error, GatError::string(),
                                         State::any()}.
--callback handle_signal(SignalID::ebus:filter_id(),
-                        Msg::ebus:messgage(),
-                        State::any()) -> ok | {ok, State::any()}.
+-callback handle_signal(SignalID::ebus:filter_id(), Msg::ebus:messgage(),
+                        State::any()) -> ebus_object:handle_info_result().
+
+-callback handle_info(Msg::term(), State::any()) -> ebus_object:handle_info_result().
 
 -optional_callbacks([read_value/1, write_value/2,
                      start_notify/1, stop_notify/1,
-                     handle_signal/3]).
+                     handle_signal/3, handle_info/2]).
 
 -behavior(gatt_object).
 -include("gatt.hrl").
@@ -45,7 +46,7 @@
          add_descriptor/2, fold_descriptors/3,
          value_changed/2, value_invalidated/1,
          properties_changed/3,
-         handle_signal/3]).
+         handle_signal/3, handle_info/2]).
 
 -spec init(list()) -> {ok, gatt:characteristic()} | {error, term()}.
 init([Bus, ServicePath, Path, Module, Args]) ->
@@ -137,17 +138,32 @@ handle_signal(SignalID, Msg, State=#state{module=Module, state=ModuleState}) ->
     case erlang:function_exported(Module, handle_signal, 3) of
         false -> ok;
         true ->
-            case Module:handle_signal(SignalID, Msg, ModuleState) of
-                ok -> ok;
-                {ok, NewModuleState} ->
-                    {ok, State#state{state=NewModuleState}}
-            end
+            Result = Module:handle_signal(SignalID, Msg, ModuleState),
+            handle_info_result_characteristic(Result, State)
+    end.
+
+handle_info(Msg, State=#state{module=Module, state=ModuleState}) ->
+    case erlang:function_exported(Module, handle_info, 2) of
+        false -> ok;
+        true ->
+            Result = Module:handle_info(Msg, ModuleState),
+            handle_info_result_characteristic(Result, State)
     end.
 
 
 %%
 %% Internal
 %%
+
+handle_info_result_characteristic(Result, State=#state{}) ->
+    case Result of
+        {noreply, NewModuleState} ->
+            {noreply, State#state{state=NewModuleState}};
+        {noreply, NewModuleState, Action} ->
+            {noreply, State#state{state=NewModuleState}, Action};
+        {stop, Reason, NewModuleState} ->
+            {stop, Reason, State#state{state=NewModuleState}}
+    end.
 
 handle_message_characteristic(Member=?GATT_CHARACTERISTIC("ReadValue"), _Msg,
                State=#state{module=Module, state=ModuleState}) ->

@@ -2,11 +2,9 @@
 
 -callback init(Args::any()) -> {ok, [gatt:characteristic_spec()], State::any()} | {error, term()}.
 -callback uuid(State::any()) -> gatt:uuid().
--callback handle_signal(SignalID::ebus:filter_id(),
-                        Msg::ebus:messgage(),
-                        State::any()) -> ok | {ok, State::any()}.
--callback handle_info(Msg::any(), State::any()) -> {noreply, State::any()} |
-                                                   {stop, Reason::term(), State::any()}.
+-callback handle_signal(SignalID::ebus:filter_id(), Msg::ebus:messgage(),
+                        State::any()) -> ebus_object:handle_info_result().
+-callback handle_info(Msg::any(), State::any()) -> ebus_object:handle_info_result().
 
 -optional_callbacks([handle_signal/3, handle_info/2]).
 
@@ -148,17 +146,36 @@ handle_info({properties_changed, Path, IFace, Changed, Invalidated}, State=#stat
      {signal, Path, ?DBUS_PROPETIES_INTERFACE, "Propertieschanged",
       [string, {dict, string, variant}, {array, string}],
       [IFace, Changed, Invalidated]}};
-handle_info({ebus_signal, Path, SignalID, Msg}, State=#state{}) ->
+handle_info({ebus_signal, Path, SignalID, Msg}, State=#state{module=Module, state=ModuleState}) ->
     case find_characteristic(Path, State) of
         {error, no_path} ->
             lager:warning("Received signal ~p without path: ~p", [SignalID, Path]),
             {noreply, State};
         {error, service_path} ->
             %% Only service path detected
-            handle_signal_service(SignalID, Msg, State);
+            case erlang:function_exported(Module, handle_signal, 3) of
+                false -> {noreply, State};
+                true ->
+                    Result = Module:handle_signal(SignalID, Msg, ModuleState),
+                    handle_info_result_service(Result, State)
+            end;
         {ok, CharKey, Characteristic} ->
             %% Characteristic detected. Pass on to characteristic
-            handle_signal_characteristic(CharKey, Characteristic, SignalID, Msg, State)
+            Result = gatt_characteristic:handle_signal(SignalID, Msg, Characteristic),
+            handle_info_result_characteristic(Result, CharKey, State)
+    end;
+handle_info({ebus_info, Path, Msg}, State=#state{}) ->
+    case find_characteristic(Path, State) of
+        {error, no_path} ->
+            lager:warning("Received ebus_info without path: ~p", [Path]),
+            {noreply, State};
+        {error, service_path} ->
+            %% Only service path detected
+            handle_info(Msg, State);
+        {ok, CharKey, Characteristic} ->
+            %% Characteristic detected. Pass on to characteristic
+            Result = gatt_characteristic:handle_info(Msg, Characteristic),
+            handle_info_result_characteristic(Result, CharKey, State)
     end;
 handle_info(Msg, State=#state{module=Module, state=ModuleState}) ->
     case erlang:function_exported(Module, handle_info, 2) of
@@ -166,12 +183,8 @@ handle_info(Msg, State=#state{module=Module, state=ModuleState}) ->
             lager:warning("Unhandled service info ~p", [Msg]),
             {noreply, State};
         true ->
-            case Module:handle_info(Msg, ModuleState) of
-                {noreply, NewModuleState} ->
-                    {noreply, State#state{state=NewModuleState}};
-                {stop, Reason, NewModuleState} ->
-                    {stop, Reason, State#state{state=NewModuleState}}
-            end
+            Result = Module:handle_info(Msg, ModuleState),
+            handle_info_result_service(Result, State)
     end.
 
 %%
@@ -242,22 +255,22 @@ handle_message_characteristic(CharKey, Characteristic, Member, Msg, State) ->
              update_characteristic(CharKey, NewCharacteristic, State)}
     end.
 
-handle_signal_service(SignalID, Msg, State=#state{module=Module, state=ModuleState}) ->
-    case erlang:function_exported(Module, handle_signal, 3) of
-        false -> {noreply, State};
-        true ->
-            case gatt_service:handle_signal(SignalID, Msg, ModuleState) of
-                ok ->
-                    {noreply, State};
-                {ok, NewModuleState} ->
-                    {noreply, State=#state{state=NewModuleState}}
-            end
+handle_info_result_service(Result, State=#state{}) ->
+    case Result of
+        {noreply, NewModuleState} ->
+            {noreply, State#state{state=NewModuleState}};
+        {noreply, NewModuleState, Action} ->
+            {noreply, State#state{state=NewModuleState}, Action};
+        {stop, Reason, NewModuleState} ->
+            {stop, Reason, State#state{state=NewModuleState}}
     end.
 
-handle_signal_characteristic(CharKey, Characteristic, SignalID, Msg, State=#state{}) ->
-    case gatt_characteristic:handle_signal(SignalID, Msg, Characteristic) of
-        ok ->
-            {noreply, State};
-        {ok, NewCharacteristic} ->
-            {noreply, update_characteristic(CharKey, NewCharacteristic, State)}
+handle_info_result_characteristic(Result, CharKey, State=#state{}) ->
+    case Result of
+        {noreply, NewCharacteristic} ->
+            {noreply, update_characteristic(CharKey, NewCharacteristic, State)};
+        {noreply, NewCharacteristic, Action} ->
+            {noreply, update_characteristic(CharKey, NewCharacteristic, State), Action};
+        {stop, Reason, NewCharacteristic} ->
+            {stop, Reason, update_characteristic(CharKey, NewCharacteristic, State)}
     end.
