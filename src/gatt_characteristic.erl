@@ -203,7 +203,7 @@ handle_message_characteristic(Member=?GATT_CHARACTERISTIC("StartNotify"), _Msg,
         true ->
             case Module:start_notify(ModuleState) of
                 {ok, NewModuleState} ->
-                    {reply, [], [], State#state{state=NewModuleState}};
+                    {noreply, State#state{state=NewModuleState}};
                 {error, GatError, NewModuleState} ->
                     {reply_error, GatError, Member, State#state{state=NewModuleState}}
             end
@@ -215,7 +215,7 @@ handle_message_characteristic(Member=?GATT_CHARACTERISTIC("StopNotify"), _Msg,
         true ->
             case Module:stop_notify(ModuleState) of
                 {ok, NewModuleState} ->
-                    {reply, [], [], State#state{state=NewModuleState}};
+                    {noreply, State#state{state=NewModuleState}};
                 {error, GatError, NewModuleState} ->
                     {reply_error, GatError, Member, State#state{state=NewModuleState}}
             end

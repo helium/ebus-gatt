@@ -252,7 +252,10 @@ handle_message_characteristic(CharKey, Characteristic, Member, Msg, State) ->
              update_characteristic(CharKey,NewCharacteristic, State)};
         {reply_error, ErrorName, ErrorMsg, NewCharacteristic} ->
             {reply_error, ErrorName, ErrorMsg,
-             update_characteristic(CharKey, NewCharacteristic, State)}
+             update_characteristic(CharKey, NewCharacteristic, State)};
+        {noreply, NewCharaceristic} ->
+            {noreply,
+             update_characteristic(CharKey, NewCharaceristic, State)}
     end.
 
 handle_info_result_service(Result, State=#state{}) ->
