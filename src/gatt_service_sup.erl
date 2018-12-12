@@ -13,9 +13,11 @@ init([]) ->
     {ok, {SupFlags, []}}.
 
 start_service(Sup, Bus, BasePath, {Module, Index, Primary}) ->
+    start_service(Sup, Bus, BasePath, {Module, Index, Primary, []});
+start_service(Sup, Bus, BasePath, {Module, Index, Primary, Args}) ->
     ChildSpec = #{ id => make_ref(),
                    start => {gatt_service, start_link,
-                             [Bus, BasePath, Index, Primary, Module, []]},
+                             [Bus, BasePath, Index, Primary, Module, Args]},
                    restart => transient,
                    type => worker
                  },

@@ -72,8 +72,8 @@ init([Bus, ServicePath, Path, Module, Args]) ->
             {error, Error}
     end.
 
-uuid(#state{module=Module, state=ModuleState}) ->
-    Module:uuid(ModuleState).
+uuid(State=#state{module=Module}) ->
+    Module:uuid(State#state.state).
 
 path(#state{path=Path}) ->
     Path.
@@ -81,8 +81,8 @@ path(#state{path=Path}) ->
 service_path(#state{service_path=ServicePath}) ->
     ServicePath.
 
-flags(#state{module=Module, state=ModuleState}) ->
-    Module:flags(ModuleState).
+flags(State=#state{module=Module}) ->
+    Module:flags(State#state.state).
 
 properties(State=#state{}) ->
     #{?GATT_CHARACTERISTIC_IFACE => mk_properties(State)}.

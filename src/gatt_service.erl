@@ -1,7 +1,7 @@
 -module(gatt_service).
 
 -callback init(Args::any()) -> {ok, [gatt:characteristic_spec()], State::any()} | {error, term()}.
--callback uuid(State::any()) -> gatt:uuid().
+-callback uuid() -> gatt:uuid().
 -callback handle_signal(SignalID::ebus:filter_id(), Msg::ebus:messgage(),
                         State::any()) -> ebus_object:handle_info_result().
 -callback handle_info(Msg::any(), State::any()) -> ebus_object:handle_info_result().
@@ -25,7 +25,8 @@
 -export([path/1]).
 
 -type service() :: pid().
--type spec() :: {Module::atom(), Index::non_neg_integer(), Primary::boolean() }.
+-type spec() :: {Module::atom(), Index::non_neg_integer(), Primary::boolean() } |
+                {Module::atom(), Index::non_neg_integer(), Primary::boolean(), Args::any()}.
 -export_type([service/0, spec/0]).
 
 -record(state, {
@@ -109,8 +110,8 @@ handle_message(Member, _Msg, State) ->
 
 handle_call(path, _From, State=#state{}) ->
     {reply, State#state.path, State};
-handle_call(uuid, _From, State=#state{module=Module, state=ModuleState}) ->
-    {reply, Module:uuid(ModuleState), State};
+handle_call(uuid, _From, State=#state{module=Module}) ->
+    {reply, Module:uuid(), State};
 handle_call(properties, _From, State=#state{}) ->
     {reply, #{?GATT_SERVICE_IFACE => mk_properties(State)}, State};
 handle_call({add_characteristic, Module, Index, Args}, _From, State=#state{}) ->
@@ -226,8 +227,8 @@ update_characteristic(CharKey, Characteristic, State=#state{}) ->
     State#state{characteristics=NewChars}.
 
 -spec mk_properties(#state{}) -> #{string() => any()}.
-mk_properties(State=#state{module=Module, state=ModuleState}) ->
-    #{"UUID" => Module:uuid(ModuleState),
+mk_properties(State=#state{module=Module}) ->
+    #{"UUID" => Module:uuid(),
       "Primary" => State#state.primary,
       "Characteristics" =>
           [gatt_characteristic:path(C) || C <- maps:values(State#state.characteristics)]

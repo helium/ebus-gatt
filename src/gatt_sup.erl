@@ -14,7 +14,7 @@ init([]) ->
 
 start_application(Module, Args) ->
     ChildSpec = #{
-                  id => {local, Module},
+                  id => Module,
                   restart => transient,
                   type => supervisor,
                   start => {gatt_application_sup, start_link, [Module, Args]}

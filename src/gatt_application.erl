@@ -22,8 +22,7 @@
                 adapter_path :: string(),
                 module :: atom(),
                 state :: any(),
-                proxy :: ebus:proxy(),
-                bus :: ebus:bus()
+                proxy :: ebus:proxy()
                }).
 
 start_link(Sup, Module, Args) ->
@@ -36,6 +35,7 @@ start_link(Sup, Module, Args) ->
     end.
 
 init([Sup, Bus, Module, Args]) ->
+    erlang:process_flag(trap_exit, true),
     AdapterPath = Module:adapter_path(),
     Path = Module:path(),
     {ok, Proxy} = ebus_proxy:start_link(Bus, ?BLUEZ_SERVICE, []),
@@ -47,8 +47,7 @@ init([Sup, Bus, Module, Args]) ->
             case Module:init(Args) of
                 {ok, ServiceSpecs, ModuleState} ->
                     self() ! {register_application, ServiceSpecs},
-                    {ok, #state{application_sup=Sup,
-                                proxy=Proxy, bus=Bus,
+                    {ok, #state{application_sup=Sup, proxy=Proxy,
                                 adapter_path=AdapterPath, path=Path,
                                 module=Module, state=ModuleState}};
                 {error, Error} ->
@@ -101,13 +100,22 @@ handle_info({register_application_result, Result}, State=#state{}) ->
         {ok, _} -> {noreply, State};
         {error, Error} -> {stop, {error, Error}, State}
     end;
+handle_info({'EXIT', _Pid, normal}, State=#state{}) ->
+    %% Ignore normal exits from registration
+    {noreply, State};
+
+
 
 handle_info(Msg, State) ->
     lager:warning("Unhandled info message ~p", [Msg]),
     {noreply, State}.
 
-terminate(_Reason, State=#state{}) ->
-    send_manager(State, "UnregisterApplication", [object_path], [State#state.path]).
+terminate(Reason, State=#state{module=Module}) ->
+    send_manager(State, "UnregisterApplication", [object_path], [State#state.path]),
+    case erlang:function_exported(Module, terminate, 2) of
+        false -> ok;
+        true -> Module:terminate(Reason, State#state.state)
+    end.
 
 %%
 %% Private
@@ -117,8 +125,9 @@ terminate(_Reason, State=#state{}) ->
 start_services(ServiceSpecs, State=#state{}) ->
     %% TODO: Move this to gatt_appliation_sup?
     ServiceSup = gatt_application_sup:service_sup(State#state.application_sup),
+    Bus = ebus_proxy:bus(State#state.proxy),
     lists:foreach(fun(ServiceSpec) ->
-                          gatt_service_sup:start_service(ServiceSup, State#state.bus,
+                          gatt_service_sup:start_service(ServiceSup, Bus,
                                                          State#state.path, ServiceSpec)
                   end, ServiceSpecs),
     State.
