@@ -39,7 +39,7 @@ properties(Pid) ->
     gen_server:call(Pid, properties).
 
 stop(Pid, Reason) ->
-    gen_server:stop(Pid, Reason).
+    gen_server:stop(Pid, Reason, 5000).
 
 start_link(Bus, BasePath, Index, Module, Args) ->
     Path = BasePath ++ "/adv" ++ integer_to_list(Index),
