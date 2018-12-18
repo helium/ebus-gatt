@@ -144,7 +144,7 @@ handle_call(Msg, _From, State) ->
 
 handle_info({properties_changed, Path, IFace, Changed, Invalidated}, State=#state{}) ->
     {noreply, State,
-     {signal, Path, ?DBUS_PROPETIES_INTERFACE, "Propertieschanged",
+     {signal, Path, ?DBUS_PROPETIES_INTERFACE, "PropertiesChanged",
       [string, {dict, string, variant}, {array, string}],
       [IFace, Changed, Invalidated]}};
 handle_info({ebus_signal, Path, SignalID, Msg}, State=#state{module=Module, state=ModuleState}) ->
