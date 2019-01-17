@@ -21,7 +21,7 @@ init(_Path, Opts) ->
                     value=unicode:characters_to_binary(Required(value))}}.
 
 uuid(#state{uuid=UUID}) ->
-    UUID.
+    unicode:characters_to_list(UUID).
 
 flags(#state{}) ->
     [read].
