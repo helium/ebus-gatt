@@ -1,4 +1,4 @@
--module(gatt_advertisement).
+-module(ble_advertisement).
 
 -callback init(Args::any()) -> {ok, State::any()} | {error, term()}.
 -callback type() -> peripheral | broadcast.
@@ -17,7 +17,7 @@
 -include_lib("ebus/include/ebus.hrl").
 
 %% ebus_object
--export([start_link/5, init/1, handle_message/3, handle_call/3, handle_info/2]).
+-export([start_link/5, init/1, handle_message/3, handle_call/3, handle_info/2, terminate/2]).
 %% API
 -export([properties/1, path/1, stop/2]).
 
@@ -77,7 +77,7 @@ handle_message(Member, _Msg, State=#state{}) ->
 handle_call(path, _From, State=#state{}) ->
     {reply, State#state.path, State};
 handle_call(properties, _From, State=#state{}) ->
-    {reply, #{?GATT_ADVERTISEMENT_IFACE => mk_properties(State)}, State};
+    {reply, #{?BLE_ADVERTISEMENT_IFACE => mk_properties(State)}, State};
 
 handle_call(Msg, _From, State) ->
     lager:warning("Unhandled call ~p", [Msg]),
@@ -107,8 +107,10 @@ handle_info(Msg, State) ->
     lager:warning("Unhandled info message ~p", [Msg]),
     {noreply, State}.
 
-
-
+terminate(_Reason, State) ->
+    lager:info("Stopping advertisement ~p", [State#state.module]),
+    call_manager(State, "UnregisterAdvertisement",
+                 [object_path], [State#state.path]).
 
 
 %%

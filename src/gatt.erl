@@ -7,7 +7,7 @@
 -type descriptor_spec() :: gatt_descriptor:spec().
 -type service() :: gatt_service:service().
 -type service_spec() :: gatt_service:spec().
--type advertisement() :: gatt_advertisement:advertisement().
+-type advertisement() :: ble_advertisement:advertisement().
 
 -export_type([uuid/0,
               descriptor/0, descriptor_spec/0,
