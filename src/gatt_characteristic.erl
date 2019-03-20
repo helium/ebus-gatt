@@ -4,8 +4,8 @@
                                                    {error, term()}.
 -callback uuid(State::any()) -> gatt:uuid().
 -callback flags(State::any()) -> [flag()].
--callback read_value(State::any()) -> {ok, binary(), State::any()} |
-                                      {error, GatError::string(), State::any()}.
+-callback read_value(State::any(), Opts::map()) -> {ok, binary(), State::any()} |
+                                                   {error, GatError::string(), State::any()}.
 -callback write_value(State::any(), binary()) -> {ok, State::any()} |
                                                  {error, GatError::string(), State::any()}.
 -callback start_notify(State::any()) -> {ok, State::any()} |
@@ -19,7 +19,7 @@
 
 -callback handle_info(Msg::term(), State::any()) -> ebus_object:handle_info_result().
 
--optional_callbacks([read_value/1, write_value/2,
+-optional_callbacks([read_value/2, write_value/2,
                      start_notify/1, stop_notify/1,
                      handle_signal/3, handle_info/2]).
 
@@ -165,13 +165,14 @@ handle_info_result_characteristic(Result, State=#state{}) ->
             {stop, Reason, State#state{state=NewModuleState}}
     end.
 
-handle_message_characteristic(Member=?GATT_CHARACTERISTIC("ReadValue"), _Msg,
+handle_message_characteristic(Member=?GATT_CHARACTERISTIC("ReadValue"), Msg,
                State=#state{module=Module, state=ModuleState}) ->
-    case erlang:function_exported(Module, read_value, 1) of
+    case erlang:function_exported(Module, read_value, 2) of
         false ->
             {reply_error, ?GATT_ERROR_NOT_SUPPORTED, Member, State};
         true ->
-            case Module:read_value(ModuleState) of
+            {ok, [Opts]} = ebus_message:args(Msg),
+            case Module:read_value(ModuleState, Opts) of
                 {ok, Bin, NewModuleState} ->
                     {reply, [{array, byte}], [Bin], State#state{state=NewModuleState}};
                 {error, GattError, NewModuleState} ->
