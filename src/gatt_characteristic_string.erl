@@ -2,7 +2,7 @@
 
 -behavior(gatt_characteristic).
 
--export([init/2, uuid/1, flags/1, read_value/1]).
+-export([init/2, uuid/1, flags/1, read_value/2]).
 
 -record(state, {
                 value :: binary(),
@@ -26,5 +26,5 @@ uuid(#state{uuid=UUID}) ->
 flags(#state{}) ->
     [read].
 
-read_value(State=#state{value=Value}) ->
+read_value(State=#state{value=Value}, _) ->
     {ok, Value, State}.
