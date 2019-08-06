@@ -10,16 +10,13 @@ The `ebus-gatt` library offers facilities for standing up an Erlang BLE GATT ser
 
 Issue BLE advertisements so smartphones can discover and pair with a device.
 
-* Register a BLE advertisement.
-* Start advertising over BLE.
-* Stop advertising over BLE.
+* [Advertising](#advertising)
 
 Construct a GATT tree with all of the following types of objects.
 
-* Applications (also known as Profiles)
-* Services
-* Characteristics
-* Descriptors
+* [Applications](#applications)
+* [Services](#services)
+* [Characteristics](#characteristics)
 
 This GATT tree defines the BLE application layer (signals and slots) that a mobile app uses to communicate with a device.
 
@@ -57,7 +54,7 @@ To ensure that `gatt` is started when your application starts also add it to the
  ]}.
 ```
 
-D-Bus and BlueZ also need to be installed and running on the target device for `ebus-gatt` to work. Since running a GATT server on Linux is still considered somewhat unusual make sure you have version 5.45 or later of BlueZ installed:
+D-Bus and BlueZ also need to be installed and running on the target device for `ebus-gatt` to work. Since running a GATT server on Linux is still somewhat uncommon make sure you have version 5.45 or later of BlueZ installed:
 
 ```bash
 $ bluetoothd -v
@@ -74,14 +71,14 @@ $ sudo service bluetooth restart
 
 Design patterns for the various types of GATT tree objects are defined by `ebus-gatt` as OTP behaviours. You construct a concrete GATT server application in Erlang by implementing these behaviours. See [`gateway-config`](https://github.com/helium/gateway-config) for an example of how to structure an Erlang/OTP application based on `ebus-gatt`. There you will find modules that implement the `ble_advertisement`, `gatt_application`, `gatt_service` and `gatt_characteristic` behaviours.
 
-## Start Profile
+## Start Application
 
-At the root of `gateway_config`'s GATT tree is a `gatt_application` also known as a "profile". An OTP supervisor starts this `gatt_application` and restarts it in the event that it crashes. See `gateway-config/src/gateway_config_app.erl` and `gateway-config/src/gateway_config_sup.erl` for how to start and configure an OTP supervisor for an `example_gatt_application` like the following:
+At the root of `gateway_config`'s GATT tree is a `gatt_application` also known as a "profile". An OTP supervisor starts this `gatt_application` and restarts it in the event that it crashes. See [`gateway_config_app.erl`](https://github.com/helium/gateway-config/blob/master/src/gateway_config_app.erl) and [`gateway_config_sup.erl`](https://github.com/helium/gateway-config/blob/master/src/gateway_config_sup.erl) for how to start and configure an OTP supervisor for our `example_gatt_application`:
 
 ```erlang
 ChildSpecs = [
               #{
-                id => gateway_gatt_application,
+                id => example_gatt_application,
                 restart => permanent,
                 type => supervisor,
                 start => {gatt_application_sup, start_link, [example_gatt_application, []]}
@@ -89,24 +86,160 @@ ChildSpecs = [
              ]
 ```
 
-## Register Advertisement and Start Advertising
+## Advertising
 
-Once your `example_gatt_application` is started you can begin advertising so that a nearby mobile phone can discover and pair with it:
+Once an `example_ble_advertisement` and `example_gatt_application` are implemented and the `example_gatt_application` is started you can begin advertising so that a nearby mobile phone can discover and pair with it:
 
 ```erlang
 {ok, Bus} = example_gatt_application:bus(),
 {ok, AdvPid} = ble_advertisement:start_link(Bus, example_gatt_application:path(), 0,
-                                            gateway_ble_advertisement, []).
+                                            example_ble_advertisement, []).
 ```
 
-## Stop Advertising
-
-Once a BLE connection is established with a generic BLE mobile app like [nRF Connect](https://play.google.com/store/apps/details?id=no.nordicsemi.android.mcp) you can then stop advertising:
+Once a connection is established with a generic BLE mobile app like [nRF Connect](https://play.google.com/store/apps/details?id=no.nordicsemi.android.mcp) you can then stop advertising:
 
 ```erlang
 ble_advertisement:stop(AdvPid, normal).
 ```
 
-## Writable Characteristics
+## Applications
 
-A `gatt_application` is a collection of one or more `gatt_service[s]`. Each `gatt_service` is comprised of `gatt_characteristic[s]` which can have "descriptors" attached to them.
+A `gatt_application` is a collection of one or more `gatt_service[s]`. The following `example_gatt_application` module only has only one `gatt_service` named `example_gatt_service`:
+
+```erlang
+-module(example_gatt_application).
+
+-behavior(gatt_application).
+
+-export([bus/0, adapter_path/0, path/0, init/1]).
+
+-record(state, {}).
+
+init([]) ->
+    %% TODO: Retrieve valid device information
+    DeviceInfo = #{
+                   manufacturer_name => <<"Acme">>,
+                   firmware_revision => <<"1.2.3">>,
+                   serial_number => <<"A7654321">>
+                  },
+    Services = [
+                {example_gatt_service, 0, true},
+                {gatt_service_device_information, 1, true, [DeviceInfo]}
+               ],
+    {ok, Services, #state{}}.
+
+bus() ->
+    ebus:system().
+
+adapter_path() ->
+    %% TODO: The Bluetooth adapter path for your device may vary
+    "/org/bluez/hci0".
+
+path() ->
+    %% TODO: Specify a valid object path for D-Bus
+    "/com/acme/onboard".
+```
+
+Note that D-Bus requires a `.conf` file so that other local D-Bus services like `connmand` can communicate with this GATT server. The `.conf` file in this example should be named `com.acme.Onboard.conf` based on the `path()` above and placed somewhere like `/etc/dbus-1/system.d` depending on your Linux distro. The contents of `com.acme.Onboard.conf` should be:
+
+```xml
+<!DOCTYPE busconfig PUBLIC
+ "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <policy user="root">
+    <allow own="com.acme.Onboard"/>
+    <allow send_interface="com.acme.Onboard"/>
+  </policy>
+  <policy context="default">
+     <allow send_destination="com.acme.Onboard"/>
+  </policy>
+</busconfig>
+```
+
+## Services
+
+A `gatt_service` is comprised of of one or more `gatt_characteristics[s]`. The following `example_gatt_service` module has three `gatt_characteristics[s]` named `example_gatt_char_wifi_connect`, `example_gatt_char_wifi_ssid` and `example_gatt_char_wifi_passphrase` respectively:
+
+```erlang
+-module(example_gatt_service).
+-include("example_gatt.hrl").
+
+-behavior(gatt_service).
+
+-export([init/1, uuid/0, handle_info/2]).
+
+-record(state, {
+                connect_result_char=undefined :: undefined | ebus:object_path()
+               }).
+
+uuid() ->
+    ?UUID_EXAMPLE_GATT_SERVICE.
+
+init(_) ->
+    Characteristics =
+        [
+         {example_gatt_char_wifi_connect, 1, []},
+         {example_gatt_char_wifi_ssid, 2, []},
+         {example_gatt_char_wifi_passphrase, 3, []}
+        ],
+    {ok, Characteristics, #state{}}.
+
+%% TODO: Implement `handle_info` functions for various connect-related messages
+
+handle_info({connect, Ssid, Passphrase}=Msg, State=#state{}) ->
+    %% TODO: Attempt to connect to given Wi-Fi SSID with given passphrase
+    {noreply, State#state{connect_result_char=Result}}
+```
+
+GATT services and their characteristics must have distinct UUIDs. Define all the UUIDs for a `gatt_service` inside a common Erlang header file like `example_gatt.hrl` for convenience:
+
+```erlang
+-define(UUID_EXAMPLE_GATT_SERVICE, "b027ee62-ee7f-4048-b912-b5e49cab4839").
+-define(UUID_EXAMPLE_GATT_CHAR_WIFI_CONNECT, "fbc273af-590d-4885-b8e2-9a58adda69bf").
+-define(UUID_EXAMPLE_GATT_CHAR_WIFI_SSID, "7f797fe1-9b61-4cc1-80f1-b03add5a0c92").
+-define(UUID_EXAMPLE_GATT_CHAR_WIFI_PASSPHRASE, "c0fce586-fc9c-468c-99f1-1713285096e0").
+```
+
+## Characteristics
+
+Each `gatt_service` is comprised of `gatt_characteristic[s]` with optional "descriptors" attached to them. Think of `gatt_characteristic[s]` as value slots that a BLE client can read from, write to and subscribe to. Here is an example of a very simple `gatt_characteristic` that supports reading from and writing to a `utf8_string` value.
+
+```erlang
+-module(example_gatt_char_ssid).
+-include("example_gatt.hrl").
+
+-behavior(gatt_characteristic).
+
+-export([init/2,
+         uuid/1,
+         flags/1,
+         read_value/2,
+         write_value/2]).
+
+-record(state, {path :: ebus:object_path()}).
+
+uuid(_) ->
+    ?UUID_EXAMPLE_GATT_CHAR_WIFI_SSID.
+
+flags(_) ->
+    [read, write].
+
+init(Path, _) ->
+    Descriptors =
+        [
+         {gatt_descriptor_cud, 0, ["Wi-Fi SSID"]},
+         {gatt_descriptor_pf, 1, [utf8_string]}
+        ],
+    {ok, Descriptors, #state{path=Path}}.
+
+read_value(State=#state{}, _) ->
+    {ok, State#state.value, State}.
+
+write_value(State=#state{}, Bin) ->
+    {ok, State#state{value=Bin}}.
+```
+
+Sometimes you don't want an unknown BLE client to be able to read the value of a `gatt_characteristic`. A cleartext Wi-Fi passphrase characteristic should be write-only for example. You can define the `flags(_)` for that characteristic as `[read]` instead of `[read, write]` to protect it from hackers.
+
+There is also a `notify` flag to enable push notifications of value changes to connected BLE clients. This is useful for characteristics that represent status changes like `offline -> connecting -> online`. The [nRF Connect](https://play.google.com/store/apps/details?id=no.nordicsemi.android.mcp) mobile app has support for these push notifications and is a great way to explore GATT services and peek and poke at GATT characteristics. 
