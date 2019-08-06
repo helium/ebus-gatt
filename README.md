@@ -31,13 +31,13 @@ Add `ebus-gatt` to the `deps` section of your `rebar.config`:
        ]}
 ```
 
-Adding `ebus-gatt` to an Erlang/OTP application this way requires that the library be built using rebar3. Since `ebus-gatt` depends on [`ebus`](https://github.com/helium/ebus) that means rebar3 has to build `ebus` as well. Install the following dependencies on Ubuntu 18.04 so rebar3 can build `ebus-gatt`.
+Adding `ebus-gatt` to an Erlang/OTP application this way requires that the library be built using rebar3. Since `ebus-gatt` depends on [`ebus`](https://github.com/helium/ebus) that means rebar3 has to build `ebus` as well. Install the following dependencies on Ubuntu 18.04 so rebar3 can build `ebus-gatt`:
 
 ```bash
 $ sudo apt install make gcc libdbus-1-dev
 ```
 
-D-Bus and BlueZ also need to be installed and running on the target device for `ebus-gatt` to work. Since running a GATT server on Linux is considered somewhat unusual make sure you have version 5.45 or later of BlueZ installed.
+D-Bus and BlueZ also need to be installed and running on the target device for `ebus-gatt` to work. Since running a GATT server on Linux is considered somewhat unusual make sure you have version 5.45 or later of BlueZ installed:
 
 ```bash
 $ bluetoothd -v
