@@ -69,9 +69,9 @@ $ sudo service bluetooth restart
 
 ## Usage
 
-Design patterns for the various types of GATT tree objects are defined by `ebus-gatt` as OTP behaviours. You construct a concrete GATT server application in Erlang by implementing these behaviours. See [`gateway-config`](https://github.com/helium/gateway-config) for an example of how to structure an Erlang/OTP application based on `ebus-gatt`. There you will find modules that implement the `ble_advertisement`, `gatt_application`, `gatt_service` and `gatt_characteristic` behaviours.
+Design patterns for the various types of GATT tree objects are defined by `ebus-gatt` as OTP behaviors. You construct a concrete GATT server application in Erlang by implementing these behaviors. See [`gateway-config`](https://github.com/helium/gateway-config) for an example of how to structure an Erlang/OTP application based on `ebus-gatt`. There you will find modules that implement the `ble_advertisement`, `gatt_application`, `gatt_service` and `gatt_characteristic` behaviors.
 
-## Start Application
+## Supervision
 
 At the root of `gateway_config`'s GATT tree is a `gatt_application` also known as a "profile". An OTP supervisor starts this `gatt_application` and restarts it in the event that it crashes. See [`gateway_config_app.erl`](https://github.com/helium/gateway-config/blob/master/src/gateway_config_app.erl) and [`gateway_config_sup.erl`](https://github.com/helium/gateway-config/blob/master/src/gateway_config_sup.erl) for how to start and configure an OTP supervisor for our `example_gatt_application`:
 
@@ -116,7 +116,6 @@ A `gatt_application` is a collection of one or more `gatt_service[s]`. The follo
 -record(state, {}).
 
 init([]) ->
-    %% TODO: Retrieve valid device information
     DeviceInfo = #{
                    manufacturer_name => <<"Acme">>,
                    firmware_revision => <<"1.2.3">>,
@@ -132,15 +131,14 @@ bus() ->
     ebus:system().
 
 adapter_path() ->
-    %% TODO: The Bluetooth adapter path for your device may vary
+    %% NOTE: The Bluetooth adapter path for your device may vary
     "/org/bluez/hci0".
 
 path() ->
-    %% TODO: Specify a valid object path for D-Bus
     "/com/acme/onboard".
 ```
 
-Note that D-Bus requires a `.conf` file so that other local D-Bus services like `connmand` can communicate with this GATT server. The `.conf` file in this example should be named `com.acme.Onboard.conf` based on the `path()` above and placed somewhere like `/etc/dbus-1/system.d` depending on your Linux distro. The contents of `com.acme.Onboard.conf` should be:
+Note that D-Bus requires a `.conf` file so that other local D-Bus services like [`connmand`](https://wiki.archlinux.org/index.php/ConnMan) can communicate with this GATT server. The `.conf` file in this example should be named `com.acme.Onboard.conf` based on the object `path()` above and placed somewhere like `/etc/dbus-1/system.d` depending on your Linux distro. The contents of `com.acme.Onboard.conf` should be:
 
 ```xml
 <!DOCTYPE busconfig PUBLIC
@@ -185,11 +183,9 @@ init(_) ->
         ],
     {ok, Characteristics, #state{}}.
 
-%% TODO: Implement `handle_info` functions for various connect-related messages
-
-handle_info({connect, Ssid, Passphrase}=Msg, State=#state{}) ->
+handle_info({connect, _Ssid, _Passphrase}=Msg, State=#state{}) ->
     %% TODO: Attempt to connect to given Wi-Fi SSID with given passphrase
-    {noreply, State#state{connect_result_char=Result}}
+    {noreply, State}
 ```
 
 GATT services and their characteristics must have distinct UUIDs. Define all the UUIDs for a `gatt_service` inside a common Erlang header file like `example_gatt.hrl` for convenience:
@@ -200,6 +196,10 @@ GATT services and their characteristics must have distinct UUIDs. Define all the
 -define(UUID_EXAMPLE_GATT_CHAR_WIFI_SSID, "7f797fe1-9b61-4cc1-80f1-b03add5a0c92").
 -define(UUID_EXAMPLE_GATT_CHAR_WIFI_PASSPHRASE, "c0fce586-fc9c-468c-99f1-1713285096e0").
 ```
+
+OTP behaviors are like inheritance in an object-oriented programming language. If you trace the lineage of `gatt_service` you will find that every `gatt_service` is an `ebus_object` and every `ebus_object` is a `gen_server`. The `gen_server` behavior defines a `handle_info/2` callback to deal with messages sent directly to the `example_gatt_service` with the `!` operator. That includes messages like `self ! {connect, Ssid, Passphrase}` which originate from the `gen_server` itself.
+
+The above `example_gatt_service` includes a stub for an unimplemented `handle_info({connect, Ssid, Passphrase}, State)` callback. To actually connect when that callback is invoked you need some way to pass the incoming `Ssid` and `Passphrase` down to your device's Wi-Fi network interface. Consider adding [`connman`](https://github.com/helium/ebus-connman) to your `rebar.config` if you want to use [`connmand`](https://wiki.archlinux.org/index.php/ConnMan) to negotiate your device's Wi-Fi connection. If your device is running [Nerves](https://github.com/nerves-project) check out [`nerves_network`](https://github.com/nerves-project/nerves_network).
 
 ## Characteristics
 
